@@ -13,43 +13,33 @@ const sharedSession = require("express-socket.io-session");
 
 const app = express();
 
+// IMPORTANT: Trust proxy for Vercel (handles X-Forwarded-* headers correctly)
+app.set("trust proxy", 1);
+
 //Load ENV variables
 const host = process.env.HOST || '0.0.0.0';
-const port = process.env.PORT || 4000;
+const port = Number(process.env.PORT) || 4000;
 const mongodb = process.env.MONGODB_URI;
 const isVercel = process.env.VERCEL === '1';
-const clientOrigin = process.env.CLIENT_ORIGIN || (isVercel ? process.env.VERCEL_URL : `http://${host}:5173`);
+const isProduction = process.env.NODE_ENV === 'production';
 
-// CORS configuration - support multiple origins
-const allowedOrigins = process.env.ALLOWED_ORIGINS 
-  ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
-  : [clientOrigin, `http://${host}:5173`, 'http://localhost:5173'];
+// Parse CLIENT_ORIGIN (can be comma-separated for multiple origins)
+const clientOrigin = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
 
-//Middleware
+if (!mongodb) {
+  throw new Error("MONGODB_URI not set in environment variables");
+}
+
+// Parse allowed origins from CLIENT_ORIGIN (comma-separated)
+const allowedOrigins = clientOrigin
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+//Middleware - Simple and secure CORS (matches working code pattern)
 app.use(cors({
-  origin: (origin, callback) => {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) {
-      return callback(null, true);
-    }
-    
-    // Check if origin is in allowed list
-    const isAllowed = allowedOrigins.some(allowed => {
-      return origin === allowed || origin.includes(allowed) || allowed.includes(origin);
-    });
-    
-    if (isAllowed) {
-      callback(null, true);
-    } else {
-      // In production, be more strict, but for now allow all to debug
-      console.log(`CORS: Allowing origin ${origin} (not in allowed list: ${allowedOrigins.join(', ')})`);
-      callback(null, true);
-    }
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  exposedHeaders: ['Content-Type']
+  origin: allowedOrigins,
+  credentials: true
 }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: false, limit: '50mb' }));
@@ -62,21 +52,19 @@ const sessionMiddleware = session({
   saveUninitialized: false,
   store: MongoStore.create({ mongoUrl: mongodb }),
   cookie: {
-    secure: isVercel || process.env.NODE_ENV === 'production', // HTTPS in production
+    secure: isProduction, // HTTPS in production (Vercel uses HTTPS)
     httpOnly: true,
-    maxAge: 1000 * 60 * 60 * 24,
-    sameSite: isVercel ? 'none' : 'lax', // Required for cross-origin in Vercel
+    sameSite: isProduction ? 'none' : 'lax', // Required for cross-origin in production
+    maxAge: 1000 * 60 * 60 * 24, // 24 hours
   },
 });
 
 app.use(sessionMiddleware);
 
 //MongoDB connection
-if (mongodb) {
-  mongoose.connect(mongodb)
-  .then(() => console.log("Connected to MongoDB"))
-  .catch(err => console.error("MongoDB error:", err));
-}
+mongoose.connect(mongodb)
+.then(() => console.log("Connected to MongoDB"))
+.catch(err => console.error("MongoDB error:", err));
 
 // Socket.IO setup (only for non-Vercel deployments)
 let server, io;
@@ -144,22 +132,18 @@ app.use('/auth', require('./routes/client/authRoutes'));
 app.use('/project', require('./routes/client/projectRoutes'));
 app.use('/summary', require('./routes/client/summaryRoutes'));
 
-//Serve frontend build
-if (process.env.NODE_ENV === 'production') {
-  app.use(express.static(path.join(__dirname, '..', 'client', 'dist')));
-  app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, '..', 'client', 'dist', 'index.html'));
-  });
-}
+// Frontend is served by its own container/service, no need to serve static files here
 
-//Auto-clean old temp files
+//Auto-clean old temp files (only for non-Vercel deployments)
 const tempPath = path.join(__dirname, "uploads/temp");
 
-if (!fs.existsSync(tempPath)) {
+if (!isVercel && !fs.existsSync(tempPath)) {
   fs.mkdirSync(tempPath, { recursive: true });
 }
 
 const cleanTempFiles = () => {
+  if (isVercel) return; // Skip on Vercel (serverless, no persistent storage)
+  
   fs.readdir(tempPath, (err, files) => {
     if (err) return; 
     for (const file of files) {
@@ -185,9 +169,11 @@ if (!isVercel) {
   //Start server
   server.listen(port, host, () => {
     console.log(`Server running at http://${host}:${port}`);
+    console.log(`Allowed origins: ${allowedOrigins.join(", ")}`);
   });
 } else {
   console.log('Running on Vercel - serverless mode');
+  console.log(`Allowed origins: ${allowedOrigins.join(", ")}`);
 }
 
 // Export for Vercel
