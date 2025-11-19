@@ -19,6 +19,8 @@ services:
 
   server:
     build: ./server
+    env_file:
+         - server/.env
     environment:
       HOST: 0.0.0.0
       PORT: ${SERVER_PORT:-4000}
@@ -42,8 +44,6 @@ services:
         condition: service_started
     networks:
       - ecosense
-    env_file:
-         - server/.env
 
   model:
     build: ./model
