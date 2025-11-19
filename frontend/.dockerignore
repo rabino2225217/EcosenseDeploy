@@ -1,0 +1,13 @@
+node_modules
+build
+dist
+npm-debug.log
+.env.local
+.env.production
+.env.*
+Dockerfile*
+**/*.log
+.react-router
+build
+node_modules
+README.md

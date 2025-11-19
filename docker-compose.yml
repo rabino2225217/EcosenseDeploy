@@ -1,0 +1,98 @@
+services:
+  frontend:
+    build:
+      context: ./frontend
+      target: runtime
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:4000}
+    environment:
+      PORT: ${FRONTEND_PORT:-5173}
+    ports:
+      - "${FRONTEND_PORT:-5173}:5173"
+    depends_on:
+      server:
+        condition: service_started
+    networks:
+      - ecosense
+
+  server:
+    build: ./server
+    environment:
+      HOST: 0.0.0.0
+      PORT: ${SERVER_PORT:-4000}
+      CLIENT_ORIGIN: ${CLIENT_ORIGIN:-http://localhost:5173}
+      MONGODB_URI: ${MONGODB_URI:-mongodb+srv://DENR:DENRpwd@ecosense.c8pm9kc.mongodb.net/EcoSense}
+      SESSION_SECRET: ${SESSION_SECRET:-ecosense-scrt-ky}
+      MODEL_API_URL: ${MODEL_API_URL:-http://model:5001/predict}
+      CONVERSION_API_URL: ${CONVERSION_API_URL:-http://model:5001/convert}
+      ACTIVE_LAYER_FILE: /app/active-layer.json
+      COPERNICUS_ENDPOINT: ${COPERNICUS_ENDPOINT:-https://sh.dataspace.copernicus.eu/ogc/wms/ed565e33-80f8-452e-9a7b-c0ef30a32460}
+      NODE_ENV: production
+    volumes:
+      - ./server/uploads:/app/uploads
+      - ./server/active-layer.json:/app/active-layer.json
+    ports:
+      - "${SERVER_PORT:-4000}:4000"
+    depends_on:
+      mongo:
+        condition: service_healthy
+      model:
+        condition: service_started
+    networks:
+      - ecosense
+
+  model:
+    build: ./model
+    environment:
+      PORT: ${MODEL_PORT:-5001}
+      MODEL_TREE_PATH: ${MODEL_TREE_PATH:-models/tree_model.pt}
+      MODEL_CROP_PATH: ${MODEL_CROP_PATH:-models/crop_model.pt}
+      MAX_FILE_SIZE_MB: ${MAX_FILE_SIZE_MB:-15}
+    volumes:
+      - ./model/models:/app/models
+    ports:
+      - "${MODEL_PORT:-5001}:5001"
+    networks:
+      - ecosense
+
+  mongo:
+    image: mongo:7.0
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_DATABASE: ecosense
+    ports:
+      - "${MONGO_PORT:-27017}:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "mongosh --quiet --eval 'db.runCommand({ ping: 1 })' || exit 1",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ecosense
+
+  nginx:
+    image: nginx:1.27-alpine
+    depends_on:
+      frontend:
+        condition: service_started
+      server:
+        condition: service_started
+    ports:
+      - "${NGINX_HTTP_PORT:-80}:80"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - ecosense
+
+volumes:
+  mongo-data:
+
+networks:
+  ecosense:
+    driver: bridge
