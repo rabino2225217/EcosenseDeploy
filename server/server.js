@@ -25,11 +25,16 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
   : [clientOrigin, `http://${host}:5173`, 'http://localhost:5173'];
 
-//Middleware
+//Middleware - CORS configuration
 app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) {
+      return callback(null, true);
+    }
+    
+    // Always allow the frontend origin explicitly
+    if (origin === 'https://ecosense-app.vercel.app') {
       return callback(null, true);
     }
     
@@ -41,16 +46,27 @@ app.use(cors({
     if (isAllowed) {
       callback(null, true);
     } else {
-      // In production, be more strict, but for now allow all to debug
-      console.log(`CORS: Allowing origin ${origin} (not in allowed list: ${allowedOrigins.join(', ')})`);
+      // Log for debugging - but allow for now
+      console.log(`CORS: Allowing origin ${origin} (allowed: ${allowedOrigins.join(', ')})`);
       callback(null, true);
     }
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  exposedHeaders: ['Content-Type']
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  exposedHeaders: ['Content-Type'],
+  preflightContinue: false,
+  optionsSuccessStatus: 204
 }));
+
+// Explicitly handle OPTIONS preflight requests
+app.options('*', (req, res) => {
+  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.sendStatus(204);
+});
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: false, limit: '50mb' }));
 app.use(compression());
@@ -130,6 +146,18 @@ if (!isVercel) {
     in: () => ({ emit: () => {} })
   });
 }
+
+// Health check endpoint for debugging
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    timestamp: new Date().toISOString(),
+    allowedOrigins: allowedOrigins,
+    clientOrigin: clientOrigin,
+    isVercel: isVercel,
+    requestOrigin: req.headers.origin
+  });
+});
 
 //Admin routes
 app.use('/admin/users', require('./routes/admin/userRoutes'));
