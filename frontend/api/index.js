@@ -1,11 +1,2 @@
-import { createRequestHandler } from "@react-router/node";
-import * as build from "../build/server/index.js";
-
-export default createRequestHandler(build, process.env);
-
-export const config = {
-  runtime: "nodejs20.x",
-  regions: ["sfo1", "iad1", "sin1", "cdg1"],
-  maxDuration: 30,
-};
-
+// Deprecated file – frontend now uses Vercel defaults (React Router builds).
+// Keeping this file empty ensures Vercel ignores the legacy API route.
