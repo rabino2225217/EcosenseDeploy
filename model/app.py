@@ -10,6 +10,7 @@ from pyproj import Transformer
 import torch
 from torchvision.ops import nms
 import geopandas as gpd
+from ensemble_boxes import weighted_boxes_fusion
 from dotenv import load_dotenv
 
 #Load environment variables
@@ -64,12 +65,12 @@ def predict():
     temp_path = None
 
     try:
-        # Save TEMPORARY FILE
+        #Save Temporary File
         with tempfile.NamedTemporaryFile(suffix=".tif", delete=False) as tmp:
             temp_path = tmp.name
             file.save(temp_path)
 
-        # Load GeoTIFF
+        #Load GeoTIFF
         with rasterio.open(temp_path) as src:
             bands = src.count
 
@@ -87,7 +88,7 @@ def predict():
             except Exception:
                 nodata_mask = None
 
-        # Prepare Image
+        #Prepare Image
         img = img.astype(np.uint8)
 
         if img.ndim == 2:
@@ -100,15 +101,15 @@ def predict():
 
         transformer = Transformer.from_crs(crs, "EPSG:4326", always_xy=True)
 
-        # Tiling
+        #Tiling
         tile_size = 1024
         overlap_percent = 0.3
-        NMS_IOU_THRESHOLD = 0.1
+        NMS_IOU_THRESHOLD = 0.5
 
         def get_tiles(H, W, tile_size=1024, overlap_percent=0.3):
             tiles = []
 
-            # Convert percentage overlap to pixel overlap
+            #Convert percentage overlap to pixel overlap
             overlap_px = int(tile_size * overlap_percent)
 
             step = tile_size - overlap_px
@@ -122,13 +123,13 @@ def predict():
                     ))
             return tiles
 
+        #Run predictions on tiles
         all_dets = []
 
-        # Run detection per tile
         for x1, y1, x2, y2 in get_tiles(H, W):
             tile = img[y1:y2, x1:x2]
 
-            # Skip empty nodata tiles
+            #Skip empty nodata tiles
             if nodata_mask is not None:
                 mask_tile = nodata_mask[y1:y2, x1:x2]
                 if np.mean(mask_tile == 0) > 0.6:
@@ -149,7 +150,6 @@ def predict():
             #Convert tile coords to full image coords
             for (bx1, by1, bx2, by2), cls, cf in zip(boxes, classes, confs):
 
-                #Clip to tile
                 bx1 = max(0, min(bx1, x2 - x1))
                 by1 = max(0, min(by1, y2 - y1))
                 bx2 = max(0, min(bx2, x2 - x1))
@@ -163,10 +163,9 @@ def predict():
                 if X2 <= X1 or Y2 <= Y1:
                     continue
 
-                #Skip large-nodata detections
                 if nodata_mask is not None:
-                    mask_crop = nodata_mask[Y1:Y2, X1:X2]
-                    if np.mean(mask_crop == 0) > 0.5:
+                    crop = nodata_mask[Y1:Y2, X1:X2]
+                    if np.mean(crop == 0) > 0.5:
                         continue
 
                 all_dets.append({
@@ -176,23 +175,67 @@ def predict():
                     "confidence": float(cf)
                 })
 
-        # MERGE OVERLAPPING DETECTIONS (NMS)
-        if all_dets:
-            boxes_tensor = torch.tensor([[d["x1"], d["y1"], d["x2"], d["y2"]] for d in all_dets], dtype=torch.float32)
-            scores_tensor = torch.tensor([d["confidence"] for d in all_dets], dtype=torch.float32)
-            keep = nms(boxes_tensor, scores_tensor, iou_threshold=NMS_IOU_THRESHOLD)
-            merged = [all_dets[i] for i in keep]
-        else:
-            merged = []
-
-        #Prepare Final Output Detections + GPS Conversion
+        #Global merging of detections
+        merged = []
         final = []
-        for det in merged:
-            x1 = max(0, min(det["x1"], W - 1))
-            y1 = max(0, min(det["y1"], H - 1))
-            x2 = max(0, min(det["x2"], W - 1))
-            y2 = max(0, min(det["y2"], H - 1))
 
+        if len(all_dets) > 0:
+
+            # WBF input
+            boxes_list = [[
+                [d["x1"]/W, d["y1"]/H, d["x2"]/W, d["y2"]/H]
+                for d in all_dets
+            ]]
+            scores_list = [[d["confidence"] for d in all_dets]]
+            labels_list = [[d["cls"] for d in all_dets]]
+
+            #Weighted Boxes Fusion (WBF)
+            wbf_boxes, wbf_scores, wbf_labels = weighted_boxes_fusion(
+                boxes_list,
+                scores_list,
+                labels_list,
+                iou_thr=0.45,      
+                skip_box_thr=0.05
+            )
+
+            #Convert WBF boxes to original scale
+            temp_dets = []
+            for box, score, label in zip(wbf_boxes, wbf_scores, wbf_labels):
+                x1 = int(box[0] * W)
+                y1 = int(box[1] * H)
+                x2 = int(box[2] * W)
+                y2 = int(box[3] * H)
+                temp_dets.append([x1, y1, x2, y2, float(score), int(label)])
+
+            #Final non-maximum suppression (NMS)
+            if len(temp_dets) > 0:
+                arr = np.array(temp_dets)
+                coords = torch.tensor(arr[:, :4], dtype=torch.float32)
+                scores = torch.tensor(arr[:, 4], dtype=torch.float32)
+
+                keep = nms(coords, scores, iou_threshold=0.40).cpu().numpy()
+
+                max_w = W * 0.15
+                max_h = H * 0.15
+
+                #Filter and prepare final merged detections
+                for idx in keep:
+                    x1, y1, x2, y2, score, cls_id = temp_dets[idx]
+                    if (x2 - x1) > max_w or (y2 - y1) > max_h:
+                        continue
+
+                    merged.append({
+                        "x1": int(x1),
+                        "y1": int(y1),
+                        "x2": int(x2),
+                        "y2": int(y2),
+                        "cls": int(cls_id),
+                        "confidence": float(score)
+                    })
+
+        #GPS conversion and final output
+        for det in merged:
+            x1, y1, x2, y2 = det["x1"], det["y1"], det["x2"], det["y2"]
             cx = (x1 + x2) / 2
             cy = (y1 + y2) / 2
 
@@ -203,21 +246,14 @@ def predict():
                 "label": model.names[det["cls"]],
                 "coordinates": {"x1": x1, "y1": y1, "x2": x2, "y2": y2},
                 "gps_coordinates": {"lat": lat, "lon": lon},
-                "confidence": float(det["confidence"])
+                "confidence": det["confidence"]
             })
 
-        #Draw final boxes on the original image
+        #Draw bounding boxes on image
         for det in merged:
-            label = model.names[det["cls"]]
-            color = COLOR_MAP.get(label, COLOR_MAP["default"])
+            color = COLOR_MAP.get(model.names[det["cls"]], COLOR_MAP["default"])
+            cv2.rectangle(img, (det["x1"], det["y1"]), (det["x2"], det["y2"]), color, 3)
 
-            cv2.rectangle(
-                img,
-                (det["x1"], det["y1"]),
-                (det["x2"], det["y2"]),
-                color,
-                3
-            )
 
         #Encode result image
         _, buffer = cv2.imencode(".jpg", img)
@@ -235,6 +271,7 @@ def predict():
         return jsonify({"error": str(e)}), 500
 
     finally:
+        #Clean up temporary file
         if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)
 
@@ -321,11 +358,11 @@ def convert():
             os.remove(temp_path)
             
 
-#Flask host, port, and debug
-FLASK_HOST = os.environ["FLASK_HOST"]
-FLASK_PORT = int(os.environ["FLASK_PORT"])
-FLASK_DEBUG = os.environ["FLASK_DEBUG"].lower() in ["true", "1", "yes"] 
+# #Flask host, port, and debug
+# FLASK_HOST = os.environ["FLASK_HOST"]
+# FLASK_PORT = int(os.environ["FLASK_PORT"])
+# FLASK_DEBUG = os.environ["FLASK_DEBUG"].lower() in ["true", "1", "yes"] 
 
-#Dev server
-if __name__ == "__main__":
-    app.run(host=FLASK_HOST, port=FLASK_PORT, debug=FLASK_DEBUG)
+# #DEV SERVER
+# if __name__ == "__main__":
+#     app.run(host=FLASK_HOST, port=FLASK_PORT, debug=FLASK_DEBUG)

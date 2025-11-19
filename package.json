@@ -1,0 +1,13 @@
+{
+  "name": "ecosense-deploy",
+  "version": "1.0.0",
+  "description": "EcoSense unified deployment",
+  "scripts": {
+    "build": "cd frontend && npm install && npm run build",
+    "dev": "concurrently \"cd server && npm run dev\" \"cd frontend && npm run dev\""
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
+

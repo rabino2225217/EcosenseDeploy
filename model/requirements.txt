@@ -9,4 +9,5 @@ geopandas
 python-dotenv
 torch
 torchvision
+ensemble-boxes
 gunicorn

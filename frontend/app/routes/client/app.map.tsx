@@ -232,6 +232,7 @@ export default function AppMap() {
     });
 
     maskLayer.set("name", "mask");
+    maskLayer.setZIndex(20000);
     return maskLayer;
   }, []);
 
@@ -506,7 +507,7 @@ export default function AppMap() {
 
       if (activeGeometries.length > 0) {
         const newMask = createMaskLayer(activeGeometries);
-        newMask.setZIndex(9999);
+        newMask.setZIndex(20000);
         maskLayerRef.current = newMask;
         mapInstance.current.addLayer(newMask);
       }
