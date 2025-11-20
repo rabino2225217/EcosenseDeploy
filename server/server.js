@@ -13,7 +13,7 @@ const sharedSession = require("express-socket.io-session");
 
 const app = express();
 
-// IMPORTANT: Trust proxy for Vercel (handles X-Forwarded-* headers correctly)
+
 app.set("trust proxy", 1);
 
 //Load ENV variables
@@ -23,7 +23,7 @@ const mongodb = process.env.MONGODB_URI;
 const isVercel = process.env.VERCEL === '1';
 const isProduction = process.env.NODE_ENV === 'production';
 
-// Parse CLIENT_ORIGIN (can be comma-separated for multiple origins)
+// Parse CLIENT_ORIGIN 
 const clientOrigin = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
 
 // Allowed origins list
@@ -39,7 +39,7 @@ if (!mongodb) {
 console.log('Allowed origins:', allowedOrigins);
 
 
-  // Fix for Vercel CORS
+  //CORS
   app.use((req, res, next) => {
     const origin = req.headers.origin;
   
@@ -73,7 +73,7 @@ const sessionMiddleware = session({
   saveUninitialized: false,
   store: MongoStore.create({ mongoUrl: mongodb }),
   cookie: {
-    secure: isProduction, // HTTPS in production (Vercel uses HTTPS)
+    secure: isProduction, // HTTPS in production
     httpOnly: true,
     sameSite: isProduction ? 'none' : 'lax', // Required for cross-origin in production
     maxAge: 1000 * 60 * 60 * 24, // 24 hours
@@ -89,7 +89,7 @@ mongoose.connect(mongodb)
 
 // Socket.IO setup (only for non-Vercel deployments)
 let server, io;
-if (!isVercel) {
+if (!isa) {
   // Create HTTP server
   server = http.createServer(app);
 
@@ -132,7 +132,7 @@ if (!isVercel) {
   //Make io accessible in routes/controllers
   app.set('io', io);
 } else {
-  // For Vercel, create a mock io object to prevent errors
+  // For , create a mock io object to prevent errors
   app.set('io', {
     to: () => ({ emit: () => {} }),
     emit: () => {},
@@ -155,7 +155,7 @@ app.use('/summary', require('./routes/client/summaryRoutes'));
 
 // Frontend is served by its own container/service, no need to serve static files here
 
-//Auto-clean old temp files (only for non-Vercel deployments)
+//Auto-clean old temp files 
 const tempPath = path.join(__dirname, "uploads/temp");
 
 if (!isVercel && !fs.existsSync(tempPath)) {
@@ -163,7 +163,7 @@ if (!isVercel && !fs.existsSync(tempPath)) {
 }
 
 const cleanTempFiles = () => {
-  if (isVercel) return; // Skip on Vercel (serverless, no persistent storage)
+  if (isVercel) return; 
   
   fs.readdir(tempPath, (err, files) => {
     if (err) return; 
@@ -182,7 +182,7 @@ const cleanTempFiles = () => {
   });
 };
 
-//Run cleanup immediately once at startup and every 3 hours (only for non-Vercel)
+//Run cleanup immediately once at startup and every 3 hours 
 if (!isVercel) {
   cleanTempFiles();
   setInterval(cleanTempFiles, 3 * 60 * 60 * 1000);
@@ -197,5 +197,5 @@ if (!isVercel) {
   console.log(`Allowed origins: ${allowedOrigins.join(", ")}`);
 }
 
-// Export for Vercel
+// Export 
 module.exports = app;
