@@ -109,7 +109,7 @@ export default function Login() {
           </div>
         </div>
         <p className="absolute bottom-6 left-6 right-6 z-10 text-center text-white text-sm">
-          An AI-Powered System for Detecting Trees and Classifying Croplands
+          An AI-Powered System for Detecting Trees and Crop Plots
           from Drone Imagery for the{" "}
           <b>DENR - Cordillera Administrative Region</b>
         </p>
