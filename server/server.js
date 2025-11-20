@@ -36,6 +36,8 @@ if (!mongodb) {
   throw new Error("MONGODB_URI not set in environment variables");
 }
 
+console.log('Allowed origins:', allowedOrigins);
+
 
   // Fix for Vercel CORS
   app.use((req, res, next) => {
