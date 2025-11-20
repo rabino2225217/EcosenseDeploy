@@ -778,6 +778,9 @@ export default function AppMap() {
               featureProjection: "EPSG:3857",
             }),
           });
+          
+          const features = vectorSource.getFeatures();
+          buildDetectionIndex(features);
 
           const filteredLayer = new VectorImageLayer({
             source: vectorSource,
