@@ -89,7 +89,7 @@ mongoose.connect(mongodb)
 
 // Socket.IO setup (only for non-Vercel deployments)
 let server, io;
-if (!isa) {
+if (!isVercel) {
   // Create HTTP server
   server = http.createServer(app);
 
