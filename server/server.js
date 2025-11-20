@@ -26,29 +26,35 @@ const isProduction = process.env.NODE_ENV === 'production';
 // Parse CLIENT_ORIGIN (can be comma-separated for multiple origins)
 const clientOrigin = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
 
+// Allowed origins list
+const allowedOrigins = clientOrigin
+  .split(',')
+  .map(o => o.trim())
+  .filter(Boolean);
+
 if (!mongodb) {
   throw new Error("MONGODB_URI not set in environment variables");
 }
 
-// Parse allowed origins from CLIENT_ORIGIN (comma-separated)
-const allowedOrigins = clientOrigin
-  .split(',')
-  .map((origin) => origin.trim())
-  .filter(Boolean);
 
   // Fix for Vercel CORS
-app.use((req, res, next) => {
-  res.setHeader("Access-Control-Allow-Origin", process.env.CLIENT_ORIGIN || "*");
-  res.setHeader("Access-Control-Allow-Credentials", "true");
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-
-  if (req.method === "OPTIONS") {
-    return res.status(200).end();
-  }
-
-  next();
-});
+  app.use((req, res, next) => {
+    const origin = req.headers.origin;
+  
+    if (allowedOrigins.includes(origin)) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+    }
+  
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+    res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  
+    if (req.method === "OPTIONS") {
+      return res.status(200).end();
+    }
+  
+    next();
+  });
 //Middleware - Simple and secure CORS (matches working code pattern)
 // app.use(cors({
 //   origin: allowedOrigins,
