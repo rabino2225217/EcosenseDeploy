@@ -20,7 +20,6 @@ app.set("trust proxy", 1);
 const host = process.env.HOST || '0.0.0.0';
 const port = Number(process.env.PORT) || 4000;
 const mongodb = process.env.MONGODB_URI;
-const isVercel = process.env.VERCEL === '1';
 const isProduction = process.env.NODE_ENV === 'production';
 
 // Parse CLIENT_ORIGIN 
@@ -87,58 +86,48 @@ mongoose.connect(mongodb)
 .then(() => console.log("Connected to MongoDB"))
 .catch(err => console.error("MongoDB error:", err));
 
-// Socket.IO setup (only for non-Vercel deployments)
-let server, io;
-if (!isa) {
-  // Create HTTP server
-  server = http.createServer(app);
+// Socket.IO setup 
+// Create HTTP server
+const server = http.createServer(app);
 
-  // Socket.IO setup
-  io = new Server(server, {
-    cors: {
-      origin: allowedOrigins,
-      credentials: true
-    },
-    transports: ["websocket"],
+// Socket.IO setup
+const io = new Server(server, {
+  cors: {
+    origin: allowedOrigins,
+    credentials: true
+  },
+  transports: ["websocket"],
+});
+
+io.use(sharedSession(sessionMiddleware, {
+  autoSave: true,
+}));
+
+io.on("connection", (socket) => {
+  const session = socket.handshake.session;
+  const role = session?.role;
+  const userId = session?.userId;
+
+  if (!userId || !role) {
+    console.log("Unknown or unauthenticated socket:", socket.id);
+    return;
+  }
+
+  if (role === "Admin") {
+    socket.join("admins");
+    console.log(`Admin joined: ${socket.id}`);
+  } else {
+    socket.join(userId.toString());
+    console.log(`Client joined with userId ${userId}: ${socket.id}`);
+  }
+
+  socket.on("disconnect", () => {
+    console.log(`Socket disconnected: ${socket.id}`);
   });
+});
 
-  io.use(sharedSession(sessionMiddleware, {
-    autoSave: true,
-  }));
-
-  io.on("connection", (socket) => {
-    const session = socket.handshake.session;
-    const role = session?.role;
-    const userId = session?.userId;
-
-    if (!userId || !role) {
-      console.log("Unknown or unauthenticated socket:", socket.id);
-      return;
-    }
-
-    if (role === "Admin") {
-      socket.join("admins");
-      console.log(`Admin joined: ${socket.id}`);
-    } else {
-      socket.join(userId.toString());
-      console.log(`Client joined with userId ${userId}: ${socket.id}`);
-    }
-
-    socket.on("disconnect", () => {
-      console.log(`Socket disconnected: ${socket.id}`);
-    });
-  });
-
-  //Make io accessible in routes/controllers
-  app.set('io', io);
-} else {
-  // For , create a mock io object to prevent errors
-  app.set('io', {
-    to: () => ({ emit: () => {} }),
-    emit: () => {},
-    in: () => ({ emit: () => {} })
-  });
-}
+//Make io accessible in routes/controllers
+app.set('io', io);
 
 //Admin routes
 app.use('/admin/users', require('./routes/admin/userRoutes'));
@@ -158,13 +147,11 @@ app.use('/summary', require('./routes/client/summaryRoutes'));
 //Auto-clean old temp files 
 const tempPath = path.join(__dirname, "uploads/temp");
 
-if (!isVercel && !fs.existsSync(tempPath)) {
+if (!fs.existsSync(tempPath)) {
   fs.mkdirSync(tempPath, { recursive: true });
 }
 
 const cleanTempFiles = () => {
-  if (isVercel) return; 
-  
   fs.readdir(tempPath, (err, files) => {
     if (err) return; 
     for (const file of files) {
@@ -183,19 +170,14 @@ const cleanTempFiles = () => {
 };
 
 //Run cleanup immediately once at startup and every 3 hours 
-if (!isVercel) {
-  cleanTempFiles();
-  setInterval(cleanTempFiles, 3 * 60 * 60 * 1000);
-  
-  //Start server
-  server.listen(port, host, () => {
-    console.log(`Server running at http://${host}:${port}`);
-    console.log(`Allowed origins: ${allowedOrigins.join(", ")}`);
-  });
-} else {
-  console.log('Running on Vercel - serverless mode');
+cleanTempFiles();
+setInterval(cleanTempFiles, 3 * 60 * 60 * 1000);
+
+//Start server
+server.listen(port, host, () => {
+  console.log(`Server running at http://${host}:${port}`);
   console.log(`Allowed origins: ${allowedOrigins.join(", ")}`);
-}
+});
 
 // Export 
 module.exports = app;

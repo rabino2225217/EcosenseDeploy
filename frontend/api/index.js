@@ -1,2 +1,2 @@
-// Deprecated file – frontend now uses Vercel defaults (React Router builds).
-// Keeping this file empty ensures Vercel ignores the legacy API route.
+// Deprecated file – frontend now uses its own build process.
+// Keeping this file empty for legacy compatibility.
