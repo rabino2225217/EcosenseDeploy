@@ -56,7 +56,7 @@ console.log('Allowed origins:', allowedOrigins);
   
     next();
   });
-//Middleware - Simple and secure CORS (matches working code pattern)
+//Middleware - secure CORS 
 // app.use(cors({
 //   origin: allowedOrigins,
 //   credentials: true
@@ -74,7 +74,7 @@ const sessionMiddleware = session({
   cookie: {
     secure: isProduction, // HTTPS in production
     httpOnly: true,
-    sameSite: isProduction ? 'none' : 'lax', // Required for cross-origin in production
+    sameSite: isProduction ? 'none' : 'lax', 
     maxAge: 1000 * 60 * 60 * 24, // 24 hours
   },
 });
@@ -142,7 +142,6 @@ app.use('/auth', require('./routes/client/authRoutes'));
 app.use('/project', require('./routes/client/projectRoutes'));
 app.use('/summary', require('./routes/client/summaryRoutes'));
 
-// Frontend is served by its own container/service, no need to serve static files here
 
 //Auto-clean old temp files 
 const tempPath = path.join(__dirname, "uploads/temp");
