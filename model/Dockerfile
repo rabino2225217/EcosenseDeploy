@@ -33,4 +33,4 @@ ENV PORT=5001
 
 EXPOSE 5001
 
-CMD ["sh", "-c", "gunicorn app:app --bind 0.0.0.0:${PORT:-5001} --workers 1 --threads 2 --timeout 300 --log-level=info"]
+CMD ["sh","-c","gunicorn app:app --bind 0.0.0.0:${PORT:-8080} --workers 1 --threads 2 --timeout 300 --log-level=info"]
