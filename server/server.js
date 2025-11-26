@@ -16,24 +16,32 @@ const app = express();
 
 app.set("trust proxy", 1);
 
+// Helper to enforce required env vars
+const requireEnv = (key) => {
+  const value = process.env[key];
+  if (!value) {
+    throw new Error(`${key} not set in environment variables`);
+  }
+  return value;
+};
+
 //Load ENV variables
-const host = process.env.HOST || '0.0.0.0';
-const port = Number(process.env.PORT) || 4000;
-const mongodb = process.env.MONGODB_URI;
+const host = requireEnv('HOST');
+const port = Number(requireEnv('PORT'));
+const mongodb = requireEnv('MONGODB_URI');
+const sessionSecret = requireEnv('SESSION_SECRET');
+const clientOrigin = requireEnv('CLIENT_ORIGIN');
 const isProduction = process.env.NODE_ENV === 'production';
 
-// Parse CLIENT_ORIGIN 
-const clientOrigin = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
+if (Number.isNaN(port)) {
+  throw new Error('PORT must be a valid number');
+}
 
 // Allowed origins list
 const allowedOrigins = clientOrigin
   .split(',')
   .map(o => o.trim())
   .filter(Boolean);
-
-if (!mongodb) {
-  throw new Error("MONGODB_URI not set in environment variables");
-}
 
 console.log('Allowed origins:', allowedOrigins);
 
@@ -67,7 +75,7 @@ app.use(compression());
 
 //Session config
 const sessionMiddleware = session({
-  secret: process.env.SESSION_SECRET || 'ecosense-scrt-ky',
+  secret: sessionSecret,
   resave: false,
   saveUninitialized: false,
   store: MongoStore.create({ mongoUrl: mongodb }),
